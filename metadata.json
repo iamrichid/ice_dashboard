@@ -1,0 +1,7 @@
+{
+  "name": "OmniGuard_Command_Center",
+  "description": "A mission-critical emergency response dashboard with real-time incident tracking, unit dispatching, and AI-assisted communication logs.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
