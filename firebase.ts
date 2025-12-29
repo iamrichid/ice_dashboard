@@ -1,7 +1,7 @@
 
 import { initializeApp } from "firebase/app";
 import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, setDoc, getDoc, updateDoc } from "firebase/firestore";
-import { getAuth, onAuthStateChanged } from "firebase/auth";
+import { getAuth, onAuthStateChanged,signInWithEmailAndPassword } from "firebase/auth";
 
 // Configuration using process.env as requested
 const firebaseConfig = {
@@ -27,6 +27,7 @@ export {
   onSnapshot,
   serverTimestamp,
   onAuthStateChanged,
+  signInWithEmailAndPassword,
   doc,
   setDoc,
   getDoc,

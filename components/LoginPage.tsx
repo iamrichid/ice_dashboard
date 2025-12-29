@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { auth, signInAnonymously } from '../firebase';
+import { auth, signInWithEmailAndPassword} from '../firebase';
 
 interface LoginPageProps {
   onLogin: () => void;
@@ -9,13 +9,14 @@ interface LoginPageProps {
 const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
   const [loading, setLoading] = useState(false);
   const [passcode, setPasscode] = useState('');
+  const [email, setEmail] = useState('');
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     try {
       // Authenticating via Firebase
-      await signInAnonymously(auth);
+      await signInWithEmailAndPassword(auth, email, passcode);
       onLogin();
     } catch (error) {
       console.error("Authorization failed. Please check your process.env configuration.", error);
@@ -49,7 +50,8 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
               <input 
                 type="text" 
                 placeholder="Enter ID (e.g. 884-Alpha)"
-                defaultValue="884-Alpha"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 className="w-full bg-surface-dark/50 border border-white/10 rounded-xl px-10 py-3 text-white placeholder-slate-600 focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
               />
             </div>
