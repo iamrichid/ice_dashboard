@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { auth, signInWithEmailAndPassword} from '../firebase';
+import { auth, signInWithEmailAndPassword } from '../firebase';
 
 interface LoginPageProps {
   onLogin: () => void;
@@ -19,8 +19,9 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
       await signInWithEmailAndPassword(auth, email, passcode);
       onLogin();
     } catch (error) {
-      console.error("Authorization failed. Please check your process.env configuration.", error);
-      alert("System Auth Failed: Connection to Firebase cluster refused. Verify environment keys.");
+      console.error("Authorization failed.", error);
+      // @ts-ignore
+      alert(`System Auth Failed: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -44,12 +45,12 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
 
         <form onSubmit={handleAuth} className="space-y-6">
           <div>
-            <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Operator Identity</label>
+            <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Authorized Email</label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-[20px] text-slate-400">badge</span>
-              <input 
-                type="text" 
-                placeholder="Enter ID (e.g. 884-Alpha)"
+              <input
+                type="email"
+                placeholder="Enter Email (e.g. deckard.k@omni-guard.gov)"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full bg-surface-dark/50 border border-white/10 rounded-xl px-10 py-3 text-white placeholder-slate-600 focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
@@ -61,8 +62,8 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
             <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Security Passcode</label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-[20px] text-slate-400">lock</span>
-              <input 
-                type="password" 
+              <input
+                type="password"
                 placeholder="••••••••"
                 value={passcode}
                 onChange={(e) => setPasscode(e.target.value)}
@@ -71,7 +72,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
             </div>
           </div>
 
-          <button 
+          <button
             type="submit"
             disabled={loading}
             className="w-full bg-primary hover:bg-primary/90 text-white font-bold py-4 rounded-xl shadow-lg shadow-primary/20 flex items-center justify-center gap-2 group transition-all"
