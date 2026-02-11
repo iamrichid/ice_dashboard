@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Incident, LogMessage, IncidentPriority, IncidentStatus } from '../types';
+import { Incident, LogMessage, IncidentPriority, IncidentStatus, Unit } from '../types';
 import { db, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, where, getDocs, limit } from '../firebase';
 
 interface DetailProps {
@@ -14,7 +14,7 @@ const IncidentDetail: React.FC<DetailProps> = ({ incident }) => {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   // Subscribe to Fleets to check availability
-  const [availableUnits, setAvailableUnits] = useState<{ [key: string]: number }>({ Police: 0, Medical: 0, Fire: 0 });
+  const [availableUnits, setAvailableUnits] = useState<Unit[]>([]);
 
   useEffect(() => {
     if (!incident?.companyId) return;
@@ -26,19 +26,23 @@ const IncidentDetail: React.FC<DetailProps> = ({ incident }) => {
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const counts = { Police: 0, Medical: 0, Fire: 0 };
-      snapshot.docs.forEach(doc => {
-        const data = doc.data();
-        if (data.type in counts) {
-          // @ts-ignore
-          counts[data.type]++;
-        }
-      });
-      setAvailableUnits(counts);
+      const units = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Unit[];
+      setAvailableUnits(units);
     });
 
     return () => unsubscribe();
   }, [incident?.companyId]);
+
+  // Helper to determine recommended unit type
+  const getRecommendedUnitType = (incidentType: string): 'Police' | 'EMS' | 'Fire' => {
+    const type = incidentType.toLowerCase();
+    if (type.includes('fire') || type.includes('arson') || type.includes('smoke')) return 'Fire';
+    if (type.includes('medical') || type.includes('health') || type.includes('cardiac') || type.includes('injury') || type.includes('overdose')) return 'EMS';
+    return 'Police';
+  };
+
+  const recommendedType = incident ? getRecommendedUnitType(incident.type) : 'Police';
+  const recommendedUnits = availableUnits.filter(u => u.type === recommendedType);
 
   // Real-time Firestore Listener for Logs
   useEffect(() => {
@@ -105,32 +109,11 @@ const IncidentDetail: React.FC<DetailProps> = ({ incident }) => {
     await addLog('Operator', messageContent);
   };
 
-  const handleDispatch = async (unitType: string) => {
-    setActionLoading(unitType);
+  const handleDispatch = async (unit: Unit) => {
+    setActionLoading(unit.id);
     try {
-      // 1. Find the first available unit of this type
-      const q = query(
-        collection(db, "fleets"),
-        where("companyId", "==", incident.companyId),
-        where("type", "==", unitType),
-        where("status", "==", "Available"),
-        limit(1)
-      );
-
-      const querySnapshot = await getDocs(q);
-
-      if (querySnapshot.empty) {
-        alert(`No available ${unitType} units found.`);
-        return;
-      }
-
-      const unitDoc = querySnapshot.docs[0];
-      const unitData = unitDoc.data();
-      const unitId = unitDoc.id; // Firestore doc ID
-      const unitDisplayId = unitData.unitId; // User facing ID (e.g. "Unit-101")
-
       // 2. Assign Unit
-      await updateDoc(doc(db, "fleets", unitId), {
+      await updateDoc(doc(db, "fleets", unit.id), {
         status: 'Busy',
         assignedIncidentId: incident.id,
         lastUpdated: new Date().toISOString()
@@ -139,10 +122,10 @@ const IncidentDetail: React.FC<DetailProps> = ({ incident }) => {
       // 3. Update Incident
       await updateDoc(doc(db, "incidents", incident.id), {
         status: IncidentStatus.DISPATCHED,
-        assignedUnitId: unitDisplayId
+        assignedUnitId: unit.unitId || unit.id // Use display ID if available
       });
 
-      await addLog('System', `DISPATCH: ${unitDisplayId} (${unitType}) assigned to incident. En Route.`);
+      await addLog('System', `DISPATCH: ${unit.unitId || unit.id} (${unit.type}) assigned to incident. En Route.`);
 
     } catch (e) {
       console.error("Dispatch failed", e);
@@ -175,11 +158,22 @@ const IncidentDetail: React.FC<DetailProps> = ({ incident }) => {
     if (!confirm("Confirm resolution: This will archive the signal and notify all responding units.")) return;
     setActionLoading('resolve');
     try {
+      // Release any assigned units
+      const q = query(collection(db, "fleets"), where("assignedIncidentId", "==", incident.id));
+      const snapshot = await getDocs(q);
+      snapshot.forEach(async (doc) => {
+        await updateDoc(doc.ref, {
+          status: 'Available', // Use string literal to avoid import issue if enum not available in scope easily
+          assignedIncidentId: null
+        });
+      });
+
       await updateDoc(doc(db, "incidents", incident.id), {
         status: IncidentStatus.RESOLVED,
-        date: new Date().toISOString().split('T')[0]
+        date: new Date().toISOString().split('T')[0],
+        assignedUnitId: null // Clear formatting on incident too
       });
-      await addLog('Operator', "Signal marked as RESOLVED. All units standing down.");
+      await addLog('Operator', "Signal marked as RESOLVED. Units released and standing down.");
     } catch (e) {
       console.error("Resolution failed", e);
     } finally {
@@ -305,35 +299,45 @@ const IncidentDetail: React.FC<DetailProps> = ({ incident }) => {
 
         {/* Dispatch & Logs Row */}
         <div className="col-span-12 lg:col-span-8 bg-surface-dark rounded-2xl p-6 border border-border-dark/50 shadow-xl">
-          <h3 className="text-[#9cabba] text-[10px] font-bold uppercase tracking-widest mb-6">Tactical Dispatch</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <DispatchButton
-              icon="local_police"
-              label={`Police (${availableUnits.Police})`}
-              sub={availableUnits.Police > 0 ? "Units Available" : "No Units"}
-              color="blue"
-              onClick={() => handleDispatch('Police')}
-              loading={actionLoading === 'Police'}
-              disabled={availableUnits.Police === 0}
-            />
-            <DispatchButton
-              icon="medical_services"
-              label={`Medical (${availableUnits.Medical})`}
-              sub={availableUnits.Medical > 0 ? "Units Available" : "No Units"}
-              color="primary"
-              onClick={() => handleDispatch('Medical')}
-              loading={actionLoading === 'Medical'}
-              disabled={availableUnits.Medical === 0}
-            />
-            <DispatchButton
-              icon="local_fire_department"
-              label={`Fire (${availableUnits.Fire})`}
-              sub={availableUnits.Fire > 0 ? "Units Available" : "No Units"}
-              color="orange"
-              onClick={() => handleDispatch('Fire')}
-              loading={actionLoading === 'Fire'}
-              disabled={availableUnits.Fire === 0}
-            />
+          <h3 className="text-[#9cabba] text-[10px] font-bold uppercase tracking-widest mb-6">Tactical Dispatch ({recommendedType})</h3>
+
+          <div className="flex flex-col gap-3 max-h-[250px] overflow-y-auto pr-2">
+            {recommendedUnits.length > 0 ? (
+              recommendedUnits.map(unit => (
+                <button
+                  key={unit.id}
+                  onClick={() => handleDispatch(unit)}
+                  disabled={!!actionLoading}
+                  className="flex items-center justify-between p-4 rounded-xl bg-surface-darker border border-border-dark hover:border-primary/50 hover:bg-primary/5 transition-all text-left group"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`size-10 rounded-lg flex items-center justify-center ${unit.type === 'Police' ? 'bg-blue-500/10 text-blue-500' :
+                      unit.type === 'EMS' ? 'bg-red-500/10 text-red-500' :
+                        'bg-orange-500/10 text-orange-500'
+                      }`}>
+                      <span className="material-symbols-outlined text-[20px]">
+                        {unit.type === 'Police' ? 'local_police' : unit.type === 'EMS' ? 'medical_services' : 'local_fire_department'}
+                      </span>
+                    </div>
+                    <div>
+                      <p className="text-white text-sm font-bold tracking-tight">{unit.unitId || unit.id}</p>
+                      <p className="text-[10px] text-slate-500 font-medium uppercase">{unit.location} • {unit.personnel.length} Personnel</p>
+                    </div>
+                  </div>
+
+                  {actionLoading === unit.id ? (
+                    <div className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  ) : (
+                    <span className="material-symbols-outlined text-slate-600 group-hover:text-primary transition-colors">send</span>
+                  )}
+                </button>
+              ))
+            ) : (
+              <div className="text-center py-8 opacity-40">
+                <span className="material-symbols-outlined text-3xl mb-2">no_crash</span>
+                <p className="text-[10px] font-bold uppercase tracking-widest">No Available {recommendedType} Units</p>
+              </div>
+            )}
           </div>
           <div className="mt-6">
             <button onClick={handleFalseAlarm} className="text-[10px] font-bold text-slate-500 hover:text-white uppercase tracking-widest transition-colors">Mark as False Alarm</button>

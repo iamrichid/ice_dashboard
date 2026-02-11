@@ -75,6 +75,7 @@ export interface LogMessage {
 
 export interface Unit {
   id: string;
+  unitId?: string;
   type: 'Police' | 'EMS' | 'Fire';
   status: UnitStatus;
   location: string;
