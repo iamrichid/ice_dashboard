@@ -307,8 +307,8 @@ const IncidentDetail: React.FC<DetailProps> = ({ incident }) => {
                 <button
                   key={unit.id}
                   onClick={() => handleDispatch(unit)}
-                  disabled={!!actionLoading}
-                  className="flex items-center justify-between p-4 rounded-xl bg-surface-darker border border-border-dark hover:border-primary/50 hover:bg-primary/5 transition-all text-left group"
+                  disabled={!!actionLoading || incident.status === IncidentStatus.RESOLVED || incident.status === IncidentStatus.CANCELLED}
+                  className="flex items-center justify-between p-4 rounded-xl bg-surface-darker border border-border-dark hover:border-primary/50 hover:bg-primary/5 transition-all text-left group disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <div className="flex items-center gap-3">
                     <div className={`size-10 rounded-lg flex items-center justify-center ${unit.type === 'Police' ? 'bg-blue-500/10 text-blue-500' :

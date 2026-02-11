@@ -105,11 +105,11 @@ const App: React.FC = () => {
         // Update the selected incident reference with new data if available
         const updated = fetchedIncidents.find(i => i.id === selectedIncident.id);
 
-        // If updated exists AND is still active/pending/dispatched, keep it selected.
-        if (updated && updated.status !== IncidentStatus.RESOLVED && updated.status !== IncidentStatus.CANCELLED) {
+        // If updated exists, keep it selected (even if Resolved) so user sees the update
+        if (updated) {
           setSelectedIncident(updated);
         } else {
-          // If it's gone OR it's now resolved/cancelled, switch to another active incident or null
+          // If it's gone from the feed entirely, switch to next active
           const nextActive = fetchedIncidents.find(i => i.status !== IncidentStatus.RESOLVED && i.status !== IncidentStatus.CANCELLED);
           setSelectedIncident(nextActive || null);
         }
@@ -120,7 +120,7 @@ const App: React.FC = () => {
     });
 
     return () => unsubscribe();
-  }, [user]);
+  }, [user, userSettings?.company]);
 
   // Firestore Fleet Listener (for Stats)
   const [activeUnitsCount, setActiveUnitsCount] = useState(0);
