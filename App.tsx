@@ -8,8 +8,9 @@ import HistoryPage from './components/HistoryPage';
 import FleetPage from './components/FleetPage';
 import SettingsPage from './components/SettingsPage';
 import LoginPage from './components/LoginPage';
-import { Incident, ViewType, UserSettings, IncidentPriority } from './types';
-import { auth, db, collection, query, onSnapshot, onAuthStateChanged, doc, setDoc } from './firebase';
+import RegisterPage from './components/RegisterPage';
+import { Incident, ViewType, UserSettings, IncidentPriority, IncidentStatus } from './types';
+import { auth, db, collection, query, onSnapshot, onAuthStateChanged, doc, setDoc, where } from './firebase';
 
 const DEFAULT_SETTINGS: UserSettings = {
   displayName: "Officer K. Deckard",
@@ -28,13 +29,14 @@ const ALERT_SOUND_URL = "https://actions.google.com/sounds/v1/alarms/beep_short.
 const App: React.FC = () => {
   const [user, setUser] = useState<any>(null);
   const [userSettings, setUserSettings] = useState<UserSettings | null>(null);
+  const [authView, setAuthView] = useState<'login' | 'register'>('login');
   const [currentView, setCurrentView] = useState<ViewType>('dashboard');
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [loading, setLoading] = useState(true);
   const [incidentsLoading, setIncidentsLoading] = useState(true);
-  
+
   // Track which incidents have already triggered a notification to avoid duplicates
   const notifiedIncidentIds = useRef<Set<string>>(new Set());
   const isInitialLoad = useRef(true);
@@ -77,24 +79,40 @@ const App: React.FC = () => {
     if (!user) return;
 
     setIncidentsLoading(true);
-    const q = query(collection(db, "incidents"));
+
+    let q;
+    if (userSettings?.company) {
+      q = query(collection(db, "incidents"), where("companyId", "==", userSettings.company));
+    } else {
+      q = query(collection(db, "incidents"));
+    }
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const fetchedIncidents = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       })) as Incident[];
-      
+
       setIncidents(fetchedIncidents);
       setIncidentsLoading(false);
-      
+
       // Auto-select first incident if none selected or if previously selected is gone
       if (fetchedIncidents.length > 0 && !selectedIncident) {
-        setSelectedIncident(fetchedIncidents[0]);
+        // Find first active incident
+        const firstActive = fetchedIncidents.find(i => i.status !== IncidentStatus.RESOLVED && i.status !== IncidentStatus.CANCELLED);
+        if (firstActive) setSelectedIncident(firstActive);
       } else if (selectedIncident) {
         // Update the selected incident reference with new data if available
         const updated = fetchedIncidents.find(i => i.id === selectedIncident.id);
-        if (updated) setSelectedIncident(updated);
+
+        // If updated exists AND is still active/pending/dispatched, keep it selected.
+        if (updated && updated.status !== IncidentStatus.RESOLVED && updated.status !== IncidentStatus.CANCELLED) {
+          setSelectedIncident(updated);
+        } else {
+          // If it's gone OR it's now resolved/cancelled, switch to another active incident or null
+          const nextActive = fetchedIncidents.find(i => i.status !== IncidentStatus.RESOLVED && i.status !== IncidentStatus.CANCELLED);
+          setSelectedIncident(nextActive || null);
+        }
       }
     }, (error) => {
       console.error("Error fetching incidents:", error);
@@ -103,6 +121,35 @@ const App: React.FC = () => {
 
     return () => unsubscribe();
   }, [user]);
+
+  // Firestore Fleet Listener (for Stats)
+  const [activeUnitsCount, setActiveUnitsCount] = useState(0);
+
+  useEffect(() => {
+    if (!user || !userSettings?.company) return;
+
+    const q = query(
+      collection(db, "fleets"),
+      where("companyId", "==", userSettings.company),
+      where("status", "==", "Available")
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setActiveUnitsCount(snapshot.size);
+    }, (error) => {
+      console.error("Error fetching fleet stats:", error);
+    });
+
+    return () => unsubscribe();
+  }, [user, userSettings?.company]);
+
+  // Calculate Stats
+  const activeIncidentsCount = incidents.filter(i => i.status !== IncidentStatus.RESOLVED && i.status !== IncidentStatus.CANCELLED).length;
+  const stats = {
+    activeIncidents: activeIncidentsCount,
+    availableUnits: activeUnitsCount, // Use real data
+    avgResponseTime: "3m 42s" // Mock for now, requires complex historical query
+  };
 
   // Audio Alert Logic
   useEffect(() => {
@@ -145,7 +192,12 @@ const App: React.FC = () => {
     </div>
   );
 
-  if (!user) return <LoginPage onLogin={() => {}} />;
+  if (!user) {
+    if (authView === 'register') {
+      return <RegisterPage onSwitchToLogin={() => setAuthView('login')} />;
+    }
+    return <LoginPage onLogin={() => { }} onSwitchToRegister={() => setAuthView('register')} />;
+  }
 
   const formattedTime = currentTime.toLocaleTimeString('en-US', {
     weekday: 'long', month: 'short', day: 'numeric',
@@ -156,15 +208,15 @@ const App: React.FC = () => {
   return (
     <div className="flex h-screen w-full bg-background-dark overflow-hidden text-slate-100 font-display">
       <Sidebar activeView={currentView} onViewChange={setCurrentView} settings={userSettings} />
-      
+
       <div className="flex-1 flex flex-col min-w-0">
-        <Header timeString={formattedTime} />
-        
+        <Header timeString={formattedTime} stats={stats} />
+
         <div className="flex-1 flex overflow-hidden">
           {currentView === 'dashboard' ? (
             <>
-              <IncidentFeed 
-                incidents={incidents} 
+              <IncidentFeed
+                incidents={incidents}
                 selectedId={selectedIncident?.id || ''}
                 onSelect={setSelectedIncident}
               />
@@ -172,8 +224,8 @@ const App: React.FC = () => {
                 {incidentsLoading ? (
                   <div className="h-full w-full flex items-center justify-center opacity-50">
                     <div className="flex flex-col items-center gap-2">
-                       <div className="size-8 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
-                       <p className="text-xs font-bold uppercase tracking-widest">Accessing Secure Feed...</p>
+                      <div className="size-8 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+                      <p className="text-xs font-bold uppercase tracking-widest">Accessing Secure Feed...</p>
                     </div>
                   </div>
                 ) : (
@@ -184,7 +236,7 @@ const App: React.FC = () => {
           ) : currentView === 'history' ? (
             <HistoryPage incidents={incidents} loading={incidentsLoading} />
           ) : currentView === 'fleet' ? (
-            <FleetPage />
+            <FleetPage companyId={userSettings?.company} />
           ) : currentView === 'settings' ? (
             <SettingsPage user={user} currentSettings={userSettings} />
           ) : (

@@ -1,12 +1,63 @@
-
-import React, { useState } from 'react';
-import { MOCK_FLEET } from '../constants';
+import React, { useState, useEffect } from 'react';
 import { Unit, UnitStatus } from '../types';
+import { db, collection, query, where, onSnapshot, addDoc, serverTimestamp } from '../firebase';
 
-const FleetPage: React.FC = () => {
+const FleetPage: React.FC<{ companyId?: string }> = ({ companyId }) => {
   const [filterType, setFilterType] = useState<string>('All');
+  const [units, setUnits] = useState<Unit[]>([]);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  const filteredUnits = MOCK_FLEET.filter(unit => 
+  // Form State
+  const [newUnitId, setNewUnitId] = useState('');
+  const [newUnitType, setNewUnitType] = useState('Police');
+  const [newUnitPersonnel, setNewUnitPersonnel] = useState('');
+
+  useEffect(() => {
+    if (!companyId) {
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    const q = query(collection(db, "fleets"), where("companyId", "==", companyId));
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const fetchedUnits = snapshot.docs.map(doc => ({
+        id: doc.data().unitId, // using unitId field for display ID
+        ...doc.data()
+      })) as Unit[];
+      setUnits(fetchedUnits);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [companyId]);
+
+  const handleAddUnit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!companyId) return;
+
+    try {
+      await addDoc(collection(db, "fleets"), {
+        unitId: newUnitId,
+        type: newUnitType,
+        status: UnitStatus.AVAILABLE,
+        location: 'HQ',
+        personnel: newUnitPersonnel.split(',').map(p => p.trim()),
+        lastUpdated: 'Just now',
+        companyId: companyId,
+        timestamp: serverTimestamp()
+      });
+      setShowAddModal(false);
+      setNewUnitId('');
+      setNewUnitPersonnel('');
+    } catch (error) {
+      console.error("Error adding unit:", error);
+    }
+  };
+
+  const filteredUnits = units.filter(unit =>
     filterType === 'All' || unit.type === filterType
   );
 
@@ -17,31 +68,110 @@ const FleetPage: React.FC = () => {
           <h2 className="text-2xl font-bold text-white mb-1">Fleet Management</h2>
           <p className="text-[#9cabba] text-sm">Real-time status of all active response units</p>
         </div>
-        
-        <div className="flex gap-2 bg-surface-darker p-1 rounded-lg border border-border-dark/50">
-          {['All', 'Police', 'EMS', 'Fire'].map(type => (
-            <button
-              key={type}
-              onClick={() => setFilterType(type)}
-              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
-                filterType === type 
-                ? 'bg-primary text-white shadow-lg shadow-primary/20' 
-                : 'text-[#9cabba] hover:text-white'
-              }`}
-            >
-              {type}
-            </button>
-          ))}
+
+        <div className="flex items-center gap-4">
+          <div className="flex gap-2 bg-surface-darker p-1 rounded-lg border border-border-dark/50">
+            {['All', 'Police', 'EMS', 'Fire'].map(type => (
+              <button
+                key={type}
+                onClick={() => setFilterType(type)}
+                className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${filterType === type
+                    ? 'bg-primary text-white shadow-lg shadow-primary/20'
+                    : 'text-[#9cabba] hover:text-white'
+                  }`}
+              >
+                {type}
+              </button>
+            ))}
+          </div>
+
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="bg-primary hover:bg-primary/90 text-white px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 transition-colors"
+          >
+            <span className="material-symbols-outlined text-[20px]">add</span>
+            Register Unit
+          </button>
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {filteredUnits.map(unit => (
-            <UnitCard key={unit.id} unit={unit} />
-          ))}
-        </div>
+        {loading ? (
+          <div className="flex items-center justify-center h-full">
+            <div className="size-8 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+          </div>
+        ) : filteredUnits.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full text-slate-500">
+            <span className="material-symbols-outlined text-4xl mb-2 opacity-50">local_shipping</span>
+            <p>No units registered for this company.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {filteredUnits.map((unit, index) => (
+              <UnitCard key={index} unit={unit} />
+            ))}
+          </div>
+        )}
       </div>
+
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-surface-darker border border-white/10 p-6 rounded-2xl w-full max-w-md shadow-2xl">
+            <h3 className="text-xl font-bold text-white mb-4">Register New Link</h3>
+            <form onSubmit={handleAddUnit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1.5">Unit ID</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. ALPHA-1"
+                  value={newUnitId}
+                  onChange={e => setNewUnitId(e.target.value)}
+                  className="w-full bg-surface-dark border border-white/10 rounded-lg px-4 py-2 text-white outline-none focus:border-primary transition-colors"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1.5">Division Type</label>
+                <select
+                  value={newUnitType}
+                  onChange={e => setNewUnitType(e.target.value)}
+                  className="w-full bg-surface-dark border border-white/10 rounded-lg px-4 py-2 text-white outline-none focus:border-primary transition-colors"
+                >
+                  <option value="Police">Police</option>
+                  <option value="EMS">EMS</option>
+                  <option value="Fire">Fire</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1.5">Personnel (Comma Separated)</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Officer K, Officer J"
+                  value={newUnitPersonnel}
+                  onChange={e => setNewUnitPersonnel(e.target.value)}
+                  className="w-full bg-surface-dark border border-white/10 rounded-lg px-4 py-2 text-white outline-none focus:border-primary transition-colors"
+                />
+              </div>
+              <div className="pt-4 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(false)}
+                  className="flex-1 bg-surface-dark hover:bg-white/5 text-slate-300 font-bold py-2 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 bg-primary hover:bg-primary/90 text-white font-bold py-2 rounded-lg transition-colors"
+                >
+                  Register Unit
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -65,10 +195,9 @@ const UnitCard: React.FC<{ unit: Unit }> = ({ unit }) => {
     <div className="bg-surface-darker border border-border-dark/30 rounded-xl p-5 hover:border-primary/30 transition-all group">
       <div className="flex justify-between items-start mb-4">
         <div className="flex items-center gap-3">
-          <div className={`size-10 rounded-lg flex items-center justify-center ${
-            unit.type === 'Police' ? 'bg-blue-500/10 text-blue-500' :
-            unit.type === 'EMS' ? 'bg-primary/10 text-primary' : 'bg-orange-500/10 text-orange-500'
-          }`}>
+          <div className={`size-10 rounded-lg flex items-center justify-center ${unit.type === 'Police' ? 'bg-blue-500/10 text-blue-500' :
+              unit.type === 'EMS' ? 'bg-primary/10 text-primary' : 'bg-orange-500/10 text-orange-500'
+            }`}>
             <span className="material-symbols-outlined">{typeIcons[unit.type]}</span>
           </div>
           <div>

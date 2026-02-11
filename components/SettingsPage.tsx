@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { UserSettings } from '../types';
-import { db, doc, setDoc } from '../firebase';
+import { db, doc, setDoc, auth, collection, addDoc } from '../firebase';
 
 interface SettingsPageProps {
   user: any;
@@ -75,32 +75,32 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ user, currentSettings }) =>
           <div className="bg-surface-darker border border-border-dark/30 rounded-xl p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label className="block text-xs font-bold text-[#9cabba] uppercase tracking-wider mb-2">Display Name</label>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 name="displayName"
                 value={formData.displayName}
                 onChange={handleChange}
-                className="w-full bg-surface-dark border border-border-dark rounded-lg text-white text-sm px-4 py-2 focus:ring-primary focus:border-primary" 
+                className="w-full bg-surface-dark border border-border-dark rounded-lg text-white text-sm px-4 py-2 focus:ring-primary focus:border-primary"
               />
             </div>
             <div>
               <label className="block text-xs font-bold text-[#9cabba] uppercase tracking-wider mb-2">Operator ID</label>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 name="operatorId"
                 value={formData.operatorId}
                 onChange={handleChange}
-                className="w-full bg-surface-dark border border-border-dark rounded-lg text-white text-sm px-4 py-2 focus:ring-primary focus:border-primary" 
+                className="w-full bg-surface-dark border border-border-dark rounded-lg text-white text-sm px-4 py-2 focus:ring-primary focus:border-primary"
               />
             </div>
             <div className="md:col-span-2">
               <label className="block text-xs font-bold text-[#9cabba] uppercase tracking-wider mb-2">Email Notifications</label>
-              <input 
-                type="email" 
+              <input
+                type="email"
                 name="email"
                 value={formData.email}
                 onChange={handleChange}
-                className="w-full bg-surface-dark border border-border-dark rounded-lg text-white text-sm px-4 py-2 focus:ring-primary focus:border-primary" 
+                className="w-full bg-surface-dark border border-border-dark rounded-lg text-white text-sm px-4 py-2 focus:ring-primary focus:border-primary"
               />
             </div>
           </div>
@@ -113,28 +113,28 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ user, currentSettings }) =>
             Console Preferences
           </h3>
           <div className="bg-surface-darker border border-border-dark/30 rounded-xl divide-y divide-border-dark/30">
-            <SettingToggle 
-              title="Real-time Feed" 
-              desc="Automatically update incident lists as new signals arrive." 
-              isOn={formData.realTimeFeed} 
+            <SettingToggle
+              title="Real-time Feed"
+              desc="Automatically update incident lists as new signals arrive."
+              isOn={formData.realTimeFeed}
               onToggle={() => handleToggle('realTimeFeed')}
             />
-            <SettingToggle 
-              title="Audio Alerts" 
-              desc="Play notification sounds for high-priority incidents." 
-              isOn={formData.audioAlerts} 
+            <SettingToggle
+              title="Audio Alerts"
+              desc="Play notification sounds for high-priority incidents."
+              isOn={formData.audioAlerts}
               onToggle={() => handleToggle('audioAlerts')}
             />
-            <SettingToggle 
-              title="Dark Mode Engine" 
-              desc="Use high-contrast dark theme for low-light environments." 
-              isOn={formData.darkModeEngine} 
+            <SettingToggle
+              title="Dark Mode Engine"
+              desc="Use high-contrast dark theme for low-light environments."
+              isOn={formData.darkModeEngine}
               onToggle={() => handleToggle('darkModeEngine')}
             />
-            <SettingToggle 
-              title="AI Dispatch Suggestions" 
-              desc="Allow the AI to suggest the most optimal response unit." 
-              isOn={formData.aiDispatch} 
+            <SettingToggle
+              title="AI Dispatch Suggestions"
+              desc="Allow the AI to suggest the most optimal response unit."
+              isOn={formData.aiDispatch}
               onToggle={() => handleToggle('aiDispatch')}
             />
           </div>
@@ -150,26 +150,71 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ user, currentSettings }) =>
             <div className="flex flex-wrap gap-4">
               <button className="bg-surface-dark hover:bg-surface-darker border border-border-dark text-white px-6 py-2 rounded-lg transition-all text-sm font-medium">Change Passcode</button>
               <button className="bg-surface-dark hover:bg-surface-darker border border-border-dark text-white px-6 py-2 rounded-lg transition-all text-sm font-medium">Session Logs</button>
-              <button className="bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 px-6 py-2 rounded-lg transition-all text-sm font-medium">Revoke All Access</button>
+              <button onClick={() => auth.signOut()} className="bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 px-6 py-2 rounded-lg transition-all text-sm font-medium">Revoke All Access</button>
+            </div>
+
+            <div className="mt-8 pt-8 border-t border-border-dark/30">
+              <h4 className="text-white font-bold text-sm mb-4">Developer Tools</h4>
+              <button
+                onClick={async () => {
+                  if (!formData) return;
+                  try {
+                    const newIncident = {
+                      title: "Simulated Alert #" + Math.floor(Math.random() * 1000),
+                      type: ["Medical Emergency", "Fire Alarm", "Traffic Accident"][Math.floor(Math.random() * 3)],
+                      priority: ["Low", "Medium", "High", "Critical"][Math.floor(Math.random() * 4)],
+                      status: "Active",
+                      location: "Simulated Location " + Math.floor(Math.random() * 100),
+                      sector: "sector-test",
+                      timeAgo: "Just now",
+                      icon: "warning",
+                      subject: {
+                        name: "Test Subject",
+                        age: 30,
+                        gender: "Unknown",
+                        conditions: ["None"],
+                        phone: "555-0199",
+                        bloodType: "Unknown",
+                        emergencyContact: "None",
+                        languages: ["English"],
+                        photo: "https://picsum.photos/200"
+                      },
+                      companyId: formData.company || "unknown",
+                      timestamp: new Date().toISOString()
+                    };
+
+                    await addDoc(collection(db, "incidents"), newIncident);
+                    setSaveStatus('success');
+                    setTimeout(() => setSaveStatus('idle'), 2000);
+                  } catch (e) {
+                    console.error(e);
+                    setSaveStatus('error');
+                  }
+                }}
+                className="bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 px-6 py-2 rounded-lg transition-all text-sm font-bold flex items-center gap-2"
+              >
+                <span className="material-symbols-outlined text-[18px]">science</span>
+                Simulate Incoming Signal
+              </button>
             </div>
           </div>
         </section>
 
         <div className="pt-4 flex justify-end gap-3">
-           <button 
-             onClick={() => setFormData(currentSettings)}
-             className="px-6 py-2 rounded-lg text-[#9cabba] font-medium hover:text-white transition-colors"
-           >
-             Discard Changes
-           </button>
-           <button 
-             onClick={handleSave}
-             disabled={saving}
-             className="px-8 py-2 rounded-lg bg-primary text-white font-bold shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all flex items-center gap-2 disabled:opacity-50"
-           >
-             {saving ? <div className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : null}
-             Save All Changes
-           </button>
+          <button
+            onClick={() => setFormData(currentSettings)}
+            className="px-6 py-2 rounded-lg text-[#9cabba] font-medium hover:text-white transition-colors"
+          >
+            Discard Changes
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="px-8 py-2 rounded-lg bg-primary text-white font-bold shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all flex items-center gap-2 disabled:opacity-50"
+          >
+            {saving ? <div className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : null}
+            Save All Changes
+          </button>
         </div>
       </div>
     </div>
@@ -183,7 +228,7 @@ const SettingToggle: React.FC<{ title: string; desc: string; isOn: boolean; onTo
         <h4 className="text-white font-semibold text-sm">{title}</h4>
         <p className="text-[#9cabba] text-xs mt-0.5">{desc}</p>
       </div>
-      <button 
+      <button
         onClick={onToggle}
         className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-surface-darker ${isOn ? 'bg-primary' : 'bg-slate-700'}`}
       >

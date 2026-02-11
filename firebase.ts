@@ -1,16 +1,24 @@
 
 import { initializeApp } from "firebase/app";
-import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, setDoc, getDoc, updateDoc } from "firebase/firestore";
-import { getAuth, onAuthStateChanged,signInWithEmailAndPassword } from "firebase/auth";
+import {
+  getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc,
+  setDoc,
+  getDoc,
+  getDocs,
+  limit,
+  updateDoc,
+  where
+} from "firebase/firestore";
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "firebase/auth";
 
 // Configuration using process.env as requested
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY ,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN ,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID ,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET ,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID ,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID ,
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
@@ -23,13 +31,17 @@ export {
   collection,
   addDoc,
   query,
+  where,
   orderBy,
   onSnapshot,
   serverTimestamp,
   onAuthStateChanged,
   signInWithEmailAndPassword,
+  signOut,
   doc,
   setDoc,
   getDoc,
+  getDocs,
+  limit,
   updateDoc,
 };

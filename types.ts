@@ -9,7 +9,8 @@ export enum IncidentPriority {
 export enum IncidentStatus {
   ACTIVE = 'Active',
   RESOLVED = 'Resolved',
-  PENDING = 'dispatched',
+  PENDING = 'Pending', // Deprecated in favor of DISPATCHED? Or keep for initial acknowledgement?
+  DISPATCHED = 'Dispatched',
   CANCELLED = 'Cancelled'
 }
 
@@ -32,6 +33,8 @@ export interface UserSettings {
   darkModeEngine: boolean;
   aiDispatch: boolean;
   photoUrl: string;
+  company?: string;
+  countryId?: string;
 }
 
 export interface Incident {
@@ -46,6 +49,8 @@ export interface Incident {
   date?: string;
   icon: string;
   subject: Subject;
+  companyId?: string;
+  assignedUnitId?: string;
 }
 
 export interface Subject {
@@ -76,4 +81,5 @@ export interface Unit {
   personnel: string[];
   assignedIncidentId?: string;
   lastUpdated: string;
+  companyId?: string;
 }

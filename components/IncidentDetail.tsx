@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Incident, LogMessage, IncidentPriority, IncidentStatus } from '../types';
-import { db, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, updateDoc } from '../firebase';
+import { db, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, where, getDocs, limit } from '../firebase';
 
 interface DetailProps {
   incident: Incident | null;
@@ -12,6 +12,33 @@ const IncidentDetail: React.FC<DetailProps> = ({ incident }) => {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  // Subscribe to Fleets to check availability
+  const [availableUnits, setAvailableUnits] = useState<{ [key: string]: number }>({ Police: 0, Medical: 0, Fire: 0 });
+
+  useEffect(() => {
+    if (!incident?.companyId) return;
+
+    const q = query(
+      collection(db, "fleets"),
+      where("companyId", "==", incident.companyId),
+      where("status", "==", "Available") // Only count available units
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const counts = { Police: 0, Medical: 0, Fire: 0 };
+      snapshot.docs.forEach(doc => {
+        const data = doc.data();
+        if (data.type in counts) {
+          // @ts-ignore
+          counts[data.type]++;
+        }
+      });
+      setAvailableUnits(counts);
+    });
+
+    return () => unsubscribe();
+  }, [incident?.companyId]);
 
   // Real-time Firestore Listener for Logs
   useEffect(() => {
@@ -81,10 +108,45 @@ const IncidentDetail: React.FC<DetailProps> = ({ incident }) => {
   const handleDispatch = async (unitType: string) => {
     setActionLoading(unitType);
     try {
-      await addLog('System', `Dispatching ${unitType} units to ${incident.location}...`);
-      await updateDoc(doc(db, "incidents", incident.id), { status: IncidentStatus.PENDING });
+      // 1. Find the first available unit of this type
+      const q = query(
+        collection(db, "fleets"),
+        where("companyId", "==", incident.companyId),
+        where("type", "==", unitType),
+        where("status", "==", "Available"),
+        limit(1)
+      );
+
+      const querySnapshot = await getDocs(q);
+
+      if (querySnapshot.empty) {
+        alert(`No available ${unitType} units found.`);
+        return;
+      }
+
+      const unitDoc = querySnapshot.docs[0];
+      const unitData = unitDoc.data();
+      const unitId = unitDoc.id; // Firestore doc ID
+      const unitDisplayId = unitData.unitId; // User facing ID (e.g. "Unit-101")
+
+      // 2. Assign Unit
+      await updateDoc(doc(db, "fleets", unitId), {
+        status: 'Busy',
+        assignedIncidentId: incident.id,
+        lastUpdated: new Date().toISOString()
+      });
+
+      // 3. Update Incident
+      await updateDoc(doc(db, "incidents", incident.id), {
+        status: IncidentStatus.DISPATCHED,
+        assignedUnitId: unitDisplayId
+      });
+
+      await addLog('System', `DISPATCH: ${unitDisplayId} (${unitType}) assigned to incident. En Route.`);
+
     } catch (e) {
       console.error("Dispatch failed", e);
+      await addLog('System', `ERROR: Dispatch failed. System offline?`);
     } finally {
       setActionLoading(null);
     }
@@ -138,6 +200,9 @@ const IncidentDetail: React.FC<DetailProps> = ({ incident }) => {
     }
   };
 
+
+
+
   return (
     <div className="flex flex-col h-full animate-slide-in-right">
       {/* Header Info */}
@@ -146,8 +211,8 @@ const IncidentDetail: React.FC<DetailProps> = ({ incident }) => {
           <div className="flex items-center gap-3 mb-1">
             <h2 className="text-2xl font-bold text-white tracking-tight">{incident.title}</h2>
             <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider ${incident.priority === IncidentPriority.CRITICAL ? 'bg-red-500 text-white' :
-                incident.priority === IncidentPriority.HIGH ? 'bg-red-500/20 text-red-400' :
-                  'bg-orange-500/20 text-orange-400'
+              incident.priority === IncidentPriority.HIGH ? 'bg-red-500/20 text-red-400' :
+                'bg-orange-500/20 text-orange-400'
               }`}>
               {incident.priority}
             </span>
@@ -242,9 +307,33 @@ const IncidentDetail: React.FC<DetailProps> = ({ incident }) => {
         <div className="col-span-12 lg:col-span-8 bg-surface-dark rounded-2xl p-6 border border-border-dark/50 shadow-xl">
           <h3 className="text-[#9cabba] text-[10px] font-bold uppercase tracking-widest mb-6">Tactical Dispatch</h3>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <DispatchButton icon="local_police" label="Police" sub="Patrol 22" color="blue" onClick={() => handleDispatch('Police')} loading={actionLoading === 'Police'} />
-            <DispatchButton icon="medical_services" label="Medical" sub="Unit 412" color="primary" onClick={() => handleDispatch('Medical')} loading={actionLoading === 'Medical'} />
-            <DispatchButton icon="local_fire_department" label="Fire" sub="Engine 4" color="orange" onClick={() => handleDispatch('Fire')} loading={actionLoading === 'Fire'} />
+            <DispatchButton
+              icon="local_police"
+              label={`Police (${availableUnits.Police})`}
+              sub={availableUnits.Police > 0 ? "Units Available" : "No Units"}
+              color="blue"
+              onClick={() => handleDispatch('Police')}
+              loading={actionLoading === 'Police'}
+              disabled={availableUnits.Police === 0}
+            />
+            <DispatchButton
+              icon="medical_services"
+              label={`Medical (${availableUnits.Medical})`}
+              sub={availableUnits.Medical > 0 ? "Units Available" : "No Units"}
+              color="primary"
+              onClick={() => handleDispatch('Medical')}
+              loading={actionLoading === 'Medical'}
+              disabled={availableUnits.Medical === 0}
+            />
+            <DispatchButton
+              icon="local_fire_department"
+              label={`Fire (${availableUnits.Fire})`}
+              sub={availableUnits.Fire > 0 ? "Units Available" : "No Units"}
+              color="orange"
+              onClick={() => handleDispatch('Fire')}
+              loading={actionLoading === 'Fire'}
+              disabled={availableUnits.Fire === 0}
+            />
           </div>
           <div className="mt-6">
             <button onClick={handleFalseAlarm} className="text-[10px] font-bold text-slate-500 hover:text-white uppercase tracking-widest transition-colors">Mark as False Alarm</button>
@@ -301,7 +390,7 @@ const InfoRow: React.FC<{ label: string; value: string }> = ({ label, value }) =
   </div>
 );
 
-const DispatchButton: React.FC<{ icon: string; label: string; sub: string; color: string; onClick?: () => void; loading?: boolean }> = ({ icon, label, sub, color, onClick, loading }) => {
+const DispatchButton: React.FC<{ icon: string; label: string; sub: string; color: string; onClick?: () => void; loading?: boolean; disabled?: boolean }> = ({ icon, label, sub, color, onClick, loading, disabled }) => {
   const iconColors = {
     blue: "bg-blue-500/10 text-blue-500 border-blue-500/20",
     primary: "bg-primary/10 text-primary border-primary/20",
@@ -309,8 +398,8 @@ const DispatchButton: React.FC<{ icon: string; label: string; sub: string; color
   };
 
   return (
-    <button onClick={onClick} disabled={loading} className="flex items-center gap-4 p-4 rounded-2xl bg-surface-darker border border-border-dark hover:border-primary/50 hover:bg-primary/5 transition-all disabled:opacity-50 group">
-      <div className={`size-12 rounded-xl flex items-center justify-center transition-all group-hover:scale-105 border ${iconColors[color as keyof typeof iconColors]}`}>
+    <button onClick={onClick} disabled={loading || disabled} className={`flex items-center gap-4 p-4 rounded-2xl bg-surface-darker border border-border-dark transition-all disabled:opacity-50 disabled:cursor-not-allowed group ${!disabled && 'hover:border-primary/50 hover:bg-primary/5'}`}>
+      <div className={`size-12 rounded-xl flex items-center justify-center transition-all ${!disabled && 'group-hover:scale-105'} border ${disabled ? 'bg-slate-800 text-slate-500 border-slate-700' : iconColors[color as keyof typeof iconColors]}`}>
         {loading ? <div className="size-6 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : <span className="material-symbols-outlined text-[28px]">{icon}</span>}
       </div>
       <div className="text-left">

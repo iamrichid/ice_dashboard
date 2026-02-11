@@ -4,9 +4,10 @@ import { auth, signInWithEmailAndPassword } from '../firebase';
 
 interface LoginPageProps {
   onLogin: () => void;
+  onSwitchToRegister: () => void;
 }
 
-const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
+const LoginPage: React.FC<LoginPageProps> = ({ onLogin, onSwitchToRegister }) => {
   const [loading, setLoading] = useState(false);
   const [passcode, setPasscode] = useState('');
   const [email, setEmail] = useState('');
@@ -90,10 +91,12 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
 
         <div className="mt-8 pt-6 border-t border-white/5 flex justify-between items-center text-[10px] text-slate-500 font-bold uppercase tracking-widest">
           <span>v3.4.0 (Production Live)</span>
-          <span className="flex items-center gap-1 text-green-500">
-            <span className="size-1.5 bg-green-500 rounded-full animate-pulse"></span>
-            Cloud-Sync: Active
-          </span>
+          <button
+            onClick={onSwitchToRegister}
+            className="text-primary hover:text-primary/80 transition-colors"
+          >
+            Create Access ID
+          </button>
         </div>
       </div>
     </div>
